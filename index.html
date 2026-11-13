@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Rate pho restaurants on broth, noodles, meat, herbs, value and portion, ranked and pinned on a map.">
+<title>Pho Ledger</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍜</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<style>
+body { margin: 0; }
+img { max-width: 100%; }
+[hidden] { display: none !important; }
+/* Layout: map + ranked bowls side by side, "log a bowl" form underneath; stacks on phones */
+:root {
+  --bg: #f3f4ef;          /* rice-paper */
+  --surface: #ffffff;
+  --sunk: #e8eae2;
+  --ink: #1f241d;
+  --muted: #5f6659;
+  --line: #d6d9cd;
+  --broth: #c7801f;       /* simmered broth amber */
+  --broth-soft: #f6e6c9;
+  --herb: #2f7a48;        /* Thai basil */
+  --herb-soft: #dcefe1;
+  --chili: #c2412d;       /* sriracha */
+  --chili-soft: #f6dcd6;
+  --hoisin: #6b3f2a;
+  --grid: #dfe2d6;
+  --font-display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --font-body: "Be Vietnam Pro", "Segoe UI", system-ui, sans-serif;
+  --r: 10px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #151813; --surface: #1e221c; --sunk: #262b23; --ink: #ecefe6; --muted: #a3ab9b;
+  --line: #343a30; --broth: #e7a446; --broth-soft: #3a2c16; --herb: #6cc488; --herb-soft: #1d3324;
+  --chili: #ee7a63; --chili-soft: #3d201b; --hoisin: #d9a487; --grid: #2a3027; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #151813; --surface: #1e221c; --sunk: #262b23; --ink: #ecefe6; --muted: #a3ab9b;
+  --line: #343a30; --broth: #e7a446; --broth-soft: #3a2c16; --herb: #6cc488; --herb-soft: #1d3324;
+  --chili: #ee7a63; --chili-soft: #3d201b; --hoisin: #d9a487; --grid: #2a3027; color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-block: 28px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 28px; }
+h1, h2, h3 { font-family: var(--font-display); margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+h1 { font-size: clamp(2rem, 5vw, 3.1rem); font-weight: 800; line-height: 1; }
+h1 .dau { color: var(--broth); }
+h2 { font-size: 1.35rem; font-weight: 700; }
+.eyebrow { font-size: .72rem; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); font-weight: 600; }
+header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 16px; }
+header p { margin: 8px 0 0; color: var(--muted); max-width: 60ch; }
+.store { font-size: .8rem; padding: 4px 10px; border-radius: 999px; background: var(--sunk); color: var(--muted); white-space: nowrap; }
+.store.ok { background: var(--herb-soft); color: var(--herb); }
+
+.top { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 860px) { .top { grid-template-columns: minmax(0, 1fr); } }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+.panel-head { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+
+/* map */
+.mapbox { position: relative; height: 440px; touch-action: none; overflow: hidden; border-radius: 0 0 var(--r) var(--r); }
+#map { width: 100%; height: 100%; background: var(--sunk); z-index: 0; }
+#map.placing, #map.placing .leaflet-interactive { cursor: crosshair; }
+.leaflet-container { font-family: var(--font-body); }
+.pin { width: 30px; height: 30px; border-radius: 50%; border: 3px solid var(--surface); color: #fff; font: 800 11px/24px var(--font-display); text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,.35); }
+.pin.sel { transform: scale(1.25); }
+.pin-new { width: 22px; height: 22px; border-radius: 50%; border: 3px dashed var(--broth); background: transparent; }
+.pin-label { background: var(--surface); color: var(--ink); border: 0; font-weight: 700; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+.pin-label::before { display: none; }
+.place-banner { position: absolute; z-index: 500; left: 56px; top: 10px; right: 10px; background: var(--broth); color: #fff; font-weight: 600; font-size: .85rem; padding: 8px 12px; border-radius: 8px; }
+.empty-map { position: absolute; z-index: 400; inset: 0; background: color-mix(in srgb, var(--surface) 70%, transparent); display: grid; place-items: center; text-align: center; color: var(--muted); padding: 24px; pointer-events: none; }
+
+/* list */
+.list { list-style: none; margin: 0; padding: 0; max-height: 520px; overflow: auto; }
+.row { border-bottom: 1px solid var(--line); }
+.row:last-child { border-bottom: 0; }
+.row > button { all: unset; box-sizing: border-box; width: 100%; display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 16px; cursor: pointer; }
+.row > button:hover { background: var(--sunk); }
+.row > button:focus-visible { outline: 2px solid var(--broth); outline-offset: -2px; }
+.row.sel > button { background: var(--broth-soft); }
+.rank { font-family: var(--font-display); font-weight: 800; color: var(--muted); font-variant-numeric: tabular-nums; }
+.nm { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sub { font-size: .8rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.score { font-family: var(--font-display); font-weight: 800; font-size: 1.35rem; font-variant-numeric: tabular-nums; text-align: right; line-height: 1; }
+.tier { display: inline-block; margin-top: 4px; font-size: .68rem; font-weight: 600; letter-spacing: .04em; padding: 2px 7px; border-radius: 999px; }
+.t-top { background: var(--herb-soft); color: var(--herb); }
+.t-good { background: var(--broth-soft); color: var(--broth); }
+.t-ok { background: var(--sunk); color: var(--muted); }
+.t-bad { background: var(--chili-soft); color: var(--chili); }
+.ex { font-size: .65rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--hoisin); border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; margin-left: 6px; vertical-align: 2px; }
+
+.detail { padding: 4px 16px 16px 56px; display: grid; gap: 12px; }
+.bars { display: grid; gap: 6px; }
+.bar { display: grid; grid-template-columns: 112px minmax(0, 1fr) 34px; gap: 10px; align-items: center; font-size: .82rem; }
+.bar .track { height: 8px; background: var(--sunk); border-radius: 4px; overflow: hidden; }
+.bar .fill { height: 100%; background: var(--broth); border-radius: 4px; }
+.bar b { text-align: right; font-variant-numeric: tabular-nums; }
+.notes { margin: 0; color: var(--ink); font-size: .9rem; }
+.meta { font-size: .8rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.actions a { font-size: .85rem; color: var(--herb); font-weight: 600; }
+
+select, input, textarea, button { font: inherit; color: inherit; }
+button { background: var(--sunk); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; cursor: pointer; font-weight: 600; font-size: .88rem; }
+button:hover { border-color: var(--muted); }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--broth); outline-offset: 1px; }
+button.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+button.danger { color: var(--chili); }
+button.danger.armed { background: var(--chili); color: #fff; border-color: var(--chili); }
+select { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: .85rem; }
+
+/* form */
+form { display: grid; gap: 22px; padding: 20px 16px; }
+.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px 18px; }
+label.f { display: grid; gap: 5px; font-size: .82rem; font-weight: 600; color: var(--muted); }
+label.f input, label.f textarea, label.f select { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; font-size: .95rem; color: var(--ink); font-weight: 400; width: 100%; }
+label.f textarea { min-height: 84px; resize: vertical; }
+.loc-row { display: flex; gap: 8px; }
+.loc-row input { min-width: 0; }
+.loc-row button { white-space: nowrap; }
+.hint { font-weight: 400; font-size: .75rem; }
+.hint.err { color: var(--chili); }
+
+.criteria { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }
+.crit { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; display: grid; gap: 6px; }
+.crit-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.crit-top strong { font-family: var(--font-display); font-size: 1.02rem; }
+.crit-top output { font-family: var(--font-display); font-weight: 800; font-size: 1.3rem; font-variant-numeric: tabular-nums; color: var(--broth); }
+.crit small { color: var(--muted); font-size: .76rem; line-height: 1.35; }
+.crit .w { font-size: .68rem; text-transform: uppercase; letter-spacing: .08em; color: var(--hoisin); font-weight: 700; }
+input[type=range] { width: 100%; accent-color: var(--broth); }
+
+.foot { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; border-top: 1px solid var(--line); padding-top: 16px; }
+.live { display: flex; align-items: baseline; gap: 10px; }
+.live .big { font-family: var(--font-display); font-size: 2.4rem; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.data-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; font-size: .8rem; color: var(--muted); }
+.toast { font-size: .85rem; color: var(--herb); font-weight: 600; }
+@media (prefers-reduced-motion: no-preference) { .bar .fill { transition: width .4s ease; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <div class="eyebrow">Phở ratings · broth first</div>
+      <h1>Ph<span class="dau">ở</span> Ledger</h1>
+      <p>Every bowl scored on the six things that matter. Broth counts triple, because a bowl lives or dies on it.</p>
+    </div>
+    <div class="data-tools">
+      <span class="store" id="store">Saved in this browser</span>
+      <button type="button" id="exportBtn">Export</button>
+      <label><button type="button" id="importBtn">Import</button><input type="file" id="importFile" accept="application/json,.json" hidden></label>
+    </div>
+  </header>
+
+  <section class="top">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Bowl map</h2>
+        <button type="button" id="fitBtn">Show all</button>
+      </div>
+      <div class="mapbox">
+        <div id="map" aria-label="Map of rated pho restaurants"></div>
+        <div class="place-banner" id="placeBanner" hidden>Click the map to drop the pin. Esc to cancel.</div>
+        <div class="empty-map" id="emptyMap" hidden><div><strong>No pins yet.</strong><br>Add a restaurant with a location below and it lands here.</div></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Rankings</h2>
+        <select id="sort" aria-label="Sort by">
+          <option value="overall">Overall</option>
+          <option value="broth">Broth</option>
+          <option value="noodles">Noodles</option>
+          <option value="meat">Meat</option>
+          <option value="herbs">Herbs &amp; garnish</option>
+          <option value="value">Value</option>
+          <option value="recent">Most recent</option>
+        </select>
+      </div>
+      <ul class="list" id="list"></ul>
+    </div>
+  </section>
+
+  <section class="panel" id="formPanel">
+    <div class="panel-head">
+      <h2 id="formTitle">Log a bowl</h2>
+      <button type="button" id="cancelEdit" hidden>Cancel edit</button>
+    </div>
+    <form id="form" novalidate>
+      <div class="fields">
+        <label class="f">Restaurant
+          <input id="f-name" required placeholder="Phở Hà Nội">
+        </label>
+        <label class="f">Suburb / area
+          <input id="f-area" placeholder="Cabramatta">
+        </label>
+        <label class="f">Bowl ordered
+          <select id="f-dish">
+            <option>Phở bò đặc biệt (special combo)</option>
+            <option>Phở tái (rare beef)</option>
+            <option>Phở chín (well-done brisket)</option>
+            <option>Phở tái nạm (rare beef &amp; flank)</option>
+            <option>Phở bò viên (beef balls)</option>
+            <option>Phở gà (chicken)</option>
+            <option>Phở chay (vegetarian)</option>
+            <option>Other</option>
+          </select>
+        </label>
+        <label class="f">Price paid
+          <input id="f-price" inputmode="decimal" placeholder="19.50">
+        </label>
+        <label class="f">Date visited
+          <input id="f-date" type="date">
+        </label>
+        <label class="f">Location
+          <span class="loc-row">
+            <input id="f-loc" placeholder="Address, coordinates or Google Maps link">
+            <button type="button" id="findBtn">Find</button>
+            <button type="button" id="pickBtn">Pick on map</button>
+          </span>
+          <span class="hint" id="locHint">Type an address and press Find, or click “Pick on map”.</span>
+        </label>
+      </div>
+
+      <div class="criteria" id="criteria"></div>
+
+      <label class="f">Notes
+        <textarea id="f-notes" placeholder="Star anise forward, clean broth, generous bean sprouts. Hoisin not needed."></textarea>
+      </label>
+
+      <div class="foot">
+        <div class="live"><span class="big" id="liveScore">7.0</span><span><span class="tier t-good" id="liveTier">Ngon</span><br><span class="hint">overall /10</span></span></div>
+        <div class="actions">
+          <span class="toast" id="toast" role="status"></span>
+          <button type="submit" class="primary" id="saveBtn">Save rating</button>
+        </div>
+      </div>
+    </form>
+  </section>
+</div>
+
+<script>
+const CRITERIA = [
+  { key: "broth",   label: "Broth",            w: 3,   help: "Clarity, depth of bone, the star anise / cinnamon / charred onion balance." },
+  { key: "noodles", label: "Noodles",          w: 1.5, help: "Bánh phở texture: silky and springy, not clumped or mushy." },
+  { key: "meat",    label: "Meat & protein",   w: 1.5, help: "Tái sliced thin and still pink, tender brisket, decent beef balls." },
+  { key: "herbs",   label: "Herbs & garnish",  w: 1,   help: "Fresh Thai basil, sprouts, lime, chilli, sawtooth coriander." },
+  { key: "value",   label: "Value",            w: 1,   help: "What you got for what you paid." },
+  { key: "portion", label: "Portion",          w: 1,   help: "Bowl size and how full you walked out." },
+];
+const TOTAL_W = CRITERIA.reduce((s, c) => s + c.w, 0);
+const overall = s => CRITERIA.reduce((t, c) => t + (Number(s?.[c.key]) || 0) * c.w, 0) / TOTAL_W;
+const tierOf = v => v >= 8.5 ? ["Ngon tuyệt", "t-top", "Outstanding"] : v >= 7 ? ["Ngon", "t-good", "Good"] : v >= 5 ? ["Tạm được", "t-ok", "Passable"] : ["Thôi", "t-bad", "Skip it"];
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+let spots = [], selectedId = null, editingId = null, armedDelete = null;
+
+/* ---------- storage (this browser) ---------- */
+const KEY = "pho-ledger-spots";
+const load = () => { try { const v = JSON.parse(localStorage.getItem(KEY) || "null"); return Array.isArray(v) ? v : null; } catch { return null; } };
+const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(spots)); } catch {} };
+const EXAMPLES = [
+  { id: "example-1", example: true, name: "Example: Corner Pho House", area: "Cabramatta", dish: "Phở bò đặc biệt (special combo)", price: "18.50", visited: "2026-10-24", notes: "Sample entry so you can see how it works. Delete it once you've added your own.", scores: { broth: 9, noodles: 8, meat: 8.5, herbs: 8, value: 9, portion: 8.5 }, lat: -33.8946, lng: 150.9372, createdAt: 1 },
+  { id: "example-2", example: true, name: "Example: Saigon Noodle Bar", area: "Bankstown", dish: "Phở tái (rare beef)", price: "17.00", visited: "2026-11-02", notes: "Sample entry. Sweeter southern-style broth, plenty of herbs.", scores: { broth: 7, noodles: 7.5, meat: 7, herbs: 9, value: 7, portion: 7 }, lat: -33.9172, lng: 151.0349, createdAt: 2 },
+  { id: "example-3", example: true, name: "Example: Late Night Pho", area: "Marrickville", dish: "Phở gà (chicken)", price: "21.00", visited: "2026-11-09", notes: "Sample entry. Thin broth, overpriced.", scores: { broth: 4.5, noodles: 6, meat: 5, herbs: 6, value: 4, portion: 5.5 }, lat: -33.9113, lng: 151.1555, createdAt: 3 },
+];
+spots = load() ?? EXAMPLES.map(x => ({ ...x }));
+
+/* ---------- criteria sliders ---------- */
+$("criteria").innerHTML = CRITERIA.map(c => `
+  <div class="crit">
+    <div class="crit-top"><strong>${c.label}</strong><output id="o-${c.key}">7</output></div>
+    <input type="range" id="s-${c.key}" min="1" max="10" step="0.5" value="7" aria-label="${c.label} score">
+    <small>${c.help}</small>
+    <span class="w">${c.w === 1 ? "Counts once" : c.w === 3 ? "Counts triple" : "Counts 1.5×"}</span>
+  </div>`).join("");
+function readScores() { const o = {}; CRITERIA.forEach(c => o[c.key] = Number($("s-" + c.key).value)); return o; }
+function refreshLive() {
+  const s = readScores();
+  CRITERIA.forEach(c => $("o-" + c.key).textContent = s[c.key]);
+  const v = overall(s), [t, cls, en] = tierOf(v);
+  $("liveScore").textContent = v.toFixed(1);
+  $("liveTier").textContent = t; $("liveTier").className = "tier " + cls; $("liveTier").title = en;
+}
+$("criteria").addEventListener("input", refreshLive);
+refreshLive();
+$("f-date").value = new Date().toISOString().slice(0, 10);
+
+/* ---------- location ---------- */
+function parseLoc(str) {
+  str = (str || "").trim(); if (!str) return null;
+  const pats = [/@(-?\d+\.\d+),\s*(-?\d+\.\d+)/, /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/, /[?&](?:q|ll|query)=(-?\d+\.\d+)(?:,|%2C)\s*(-?\d+\.\d+)/i, /^(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)$/];
+  for (const p of pats) { const m = str.match(p); if (m) { const lat = +m[1], lng = +m[2]; if (Math.abs(lat) <= 85 && Math.abs(lng) <= 180) return { lat, lng }; } }
+  return undefined; // text that isn't coordinates (maybe an address)
+}
+let pending = null; // {lat,lng} chosen for the form
+function setPending(ll, label) {
+  pending = ll;
+  const h = $("locHint"); h.classList.remove("err");
+  h.textContent = ll ? (label ? `Found: ${label}` : `Pin at ${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)}`) : "Type an address and press Find, or click “Pick on map”.";
+  drawPending();
+  if (ll) map.setView([ll.lat, ll.lng], Math.max(map.getZoom(), 15));
+}
+$("f-loc").addEventListener("input", () => {
+  const r = parseLoc($("f-loc").value);
+  if (r) setPending(r);
+  else if (r === null) setPending(null);
+  else { pending = null; drawPending(); $("locHint").classList.remove("err"); $("locHint").textContent = "Press Find to look up this address."; }
+});
+async function findAddress() {
+  const q = $("f-loc").value.trim() || [$("f-name").value, $("f-area").value].filter(Boolean).join(" ");
+  if (!q) { $("locHint").textContent = "Type an address or the restaurant name first."; return; }
+  const parsed = parseLoc(q); if (parsed) return setPending(parsed);
+  $("findBtn").disabled = true; $("locHint").textContent = "Searching…";
+  try {
+    const r = await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=" + encodeURIComponent(q), { headers: { "Accept-Language": "en" } });
+    const [hit] = await r.json();
+    if (!hit) { $("locHint").classList.add("err"); $("locHint").textContent = "No match. Try a fuller address, or use Pick on map."; pending = null; drawPending(); return; }
+    setPending({ lat: +hit.lat, lng: +hit.lon }, hit.display_name.split(",").slice(0, 3).join(","));
+  } catch { $("locHint").classList.add("err"); $("locHint").textContent = "Address search is unavailable right now. Use Pick on map instead."; }
+  finally { $("findBtn").disabled = false; }
+}
+$("findBtn").onclick = findAddress;
+$("f-loc").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); findAddress(); } });
+
+/* ---------- map (Leaflet + OpenStreetMap) ---------- */
+const map = L.map("map", { zoomControl: true }).setView([-33.9, 151.05], 11);
+L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
+  maxZoom: 19, subdomains: "abcd",
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+}).addTo(map);
+const layer = L.layerGroup().addTo(map);
+let pendingMarker = null;
+const pinColor = v => v >= 8.5 ? css("--herb") : v >= 7 ? css("--broth") : v >= 5 ? css("--muted") : css("--chili");
+const located = () => spots.filter(s => Number.isFinite(s.lat) && Number.isFinite(s.lng));
+function drawPins() {
+  layer.clearLayers();
+  for (const s of located()) {
+    const v = overall(s.scores), sel = s.id === selectedId;
+    const m = L.marker([s.lat, s.lng], {
+      icon: L.divIcon({ className: "", html: `<div class="pin${sel ? " sel" : ""}" style="background:${pinColor(v)}">${v.toFixed(1)}</div>`, iconSize: [30, 30], iconAnchor: [15, 15] }),
+      zIndexOffset: sel ? 1000 : 0, title: s.name, keyboard: true,
+    }).addTo(layer);
+    m.bindTooltip(esc(s.name), { direction: "bottom", offset: [0, 14], className: "pin-label", permanent: sel });
+    m.on("click", () => { if (!placing) select(s.id, true); });
+  }
+  $("emptyMap").hidden = located().length > 0 || !!pending;
+}
+function drawPending() {
+  if (pendingMarker) { pendingMarker.remove(); pendingMarker = null; }
+  if (pending) pendingMarker = L.marker([pending.lat, pending.lng], { icon: L.divIcon({ className: "", html: '<div class="pin-new"></div>', iconSize: [22, 22], iconAnchor: [11, 11] }), interactive: false }).addTo(map);
+  $("emptyMap").hidden = located().length > 0 || !!pending;
+}
+function fit() {
+  const pts = located().map(s => [s.lat, s.lng]);
+  if (pts.length === 1) map.setView(pts[0], 15); else if (pts.length) map.fitBounds(pts, { padding: [40, 40], maxZoom: 15 });
+}
+$("fitBtn").onclick = fit;
+let placing = false;
+function setPlacing(on) { placing = on; $("map").classList.toggle("placing", on); $("placeBanner").hidden = !on; $("pickBtn").textContent = on ? "Cancel" : "Pick on map"; if (on) $("map").scrollIntoView({ behavior: "smooth", block: "center" }); }
+$("pickBtn").onclick = () => setPlacing(!placing);
+map.on("click", e => {
+  if (!placing) return;
+  const ll = { lat: +e.latlng.lat.toFixed(6), lng: +e.latlng.lng.toFixed(6) };
+  $("f-loc").value = `${ll.lat}, ${ll.lng}`; setPending(ll); setPlacing(false);
+});
+addEventListener("keydown", e => { if (e.key === "Escape" && placing) setPlacing(false); });
+new ResizeObserver(() => map.invalidateSize()).observe($("map"));
+
+/* ---------- list ---------- */
+function sorted() {
+  const k = $("sort").value;
+  return [...spots].sort((a, b) => k === "recent" ? String(b.visited || "").localeCompare(String(a.visited || "")) || (b.createdAt || 0) - (a.createdAt || 0)
+    : k === "overall" ? overall(b.scores) - overall(a.scores) : (b.scores?.[k] || 0) - (a.scores?.[k] || 0));
+}
+const mapsUrl = s => Number.isFinite(s.lat) ? `https://www.google.com/maps/search/?api=1&query=${s.lat},${s.lng}` : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((s.name || "") + " " + (s.area || ""))}`;
+function renderList() {
+  const list = $("list"), k = $("sort").value;
+  if (!spots.length) { list.innerHTML = `<li class="row" style="padding:20px 16px;color:var(--muted)">No bowls rated yet. Log your first one below and it'll rank here.</li>`; return; }
+  list.innerHTML = sorted().map((s, i) => {
+    const v = overall(s.scores), [t, cls, en] = tierOf(v), shown = (k === "overall" || k === "recent") ? v : (s.scores?.[k] || 0), sel = s.id === selectedId;
+    return `<li class="row${sel ? " sel" : ""}" data-id="${esc(s.id)}">
+      <button type="button" aria-expanded="${sel}">
+        <span class="rank">${i + 1}</span>
+        <span style="min-width:0"><div class="nm">${esc(s.name)}${s.example ? '<span class="ex">Example</span>' : ""}</div><div class="sub">${esc([s.area, s.dish].filter(Boolean).join(" · "))}</div></span>
+        <span><div class="score">${shown.toFixed(1)}</div><span class="tier ${cls}" title="${en}">${t}</span></span>
+      </button>
+      ${sel ? `<div class="detail">
+        <div class="bars">${CRITERIA.map(c => `<div class="bar"><span>${c.label}</span><span class="track"><span class="fill" style="width:${(s.scores?.[c.key] || 0) * 10}%;display:block"></span></span><b>${s.scores?.[c.key] ?? "–"}</b></div>`).join("")}</div>
+        ${s.notes ? `<p class="notes">${esc(s.notes)}</p>` : ""}
+        <div class="meta">${s.price ? `<span>Paid $${esc(s.price)}</span>` : ""}${s.visited ? `<span>Visited ${esc(s.visited)}</span>` : ""}${Number.isFinite(s.lat) ? "" : "<span>No map location</span>"}</div>
+        <div class="actions">
+          <a href="${mapsUrl(s)}" target="_blank" rel="noopener">Open in Google Maps ↗</a>
+          <button type="button" data-act="edit">Edit</button>
+          <button type="button" class="danger${armedDelete === s.id ? " armed" : ""}" data-act="del">${armedDelete === s.id ? "Confirm delete" : "Delete"}</button>
+        </div>
+      </div>` : ""}
+    </li>`;
+  }).join("");
+}
+function refresh() { renderList(); drawPins(); }
+$("list").addEventListener("click", e => {
+  const row = e.target.closest(".row"); if (!row || !row.dataset.id) return;
+  const id = row.dataset.id, act = e.target.closest("[data-act]")?.dataset.act;
+  if (act === "edit") return startEdit(id);
+  if (act === "del") {
+    if (armedDelete !== id) { armedDelete = id; return renderList(); }
+    armedDelete = null; spots = spots.filter(s => s.id !== id); persist();
+    if (selectedId === id) selectedId = null; refresh(); return flash("Deleted");
+  }
+  if (e.target.closest("a")) return;
+  if (e.target.closest(".row > button")) select(selectedId === id ? null : id, false);
+});
+$("sort").onchange = renderList;
+function select(id, fromMap) {
+  selectedId = id; armedDelete = null; refresh();
+  if (fromMap && id) document.querySelector(`.row[data-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  if (!fromMap && id) { const s = spots.find(x => x.id === id); if (s && Number.isFinite(s.lat) && !map.getBounds().pad(-0.1).contains([s.lat, s.lng])) map.panTo([s.lat, s.lng]); }
+}
+
+/* ---------- form ---------- */
+function flash(msg) { $("toast").textContent = msg; clearTimeout(flash.t); flash.t = setTimeout(() => $("toast").textContent = "", 3500); }
+function startEdit(id) {
+  const s = spots.find(x => x.id === id); if (!s) return;
+  editingId = id;
+  $("f-name").value = s.name || ""; $("f-area").value = s.area || ""; $("f-price").value = s.price || ""; $("f-date").value = s.visited || ""; $("f-notes").value = s.notes || "";
+  $("f-dish").value = [...$("f-dish").options].some(o => o.value === s.dish) ? s.dish : "Other";
+  $("f-loc").value = Number.isFinite(s.lat) ? `${s.lat}, ${s.lng}` : "";
+  setPending(Number.isFinite(s.lat) ? { lat: s.lat, lng: s.lng } : null);
+  CRITERIA.forEach(c => $("s-" + c.key).value = s.scores?.[c.key] ?? 7); refreshLive();
+  $("formTitle").textContent = "Edit: " + s.name; $("saveBtn").textContent = "Save changes"; $("cancelEdit").hidden = false;
+  $("formPanel").scrollIntoView({ behavior: "smooth" });
+}
+function resetForm() {
+  editingId = null; $("form").reset(); $("f-date").value = new Date().toISOString().slice(0, 10);
+  CRITERIA.forEach(c => $("s-" + c.key).value = 7); refreshLive(); setPending(null);
+  $("formTitle").textContent = "Log a bowl"; $("saveBtn").textContent = "Save rating"; $("cancelEdit").hidden = true;
+}
+$("cancelEdit").onclick = resetForm;
+$("form").addEventListener("submit", e => {
+  e.preventDefault();
+  const name = $("f-name").value.trim();
+  if (!name) { $("f-name").focus(); return flash("Add the restaurant name first."); }
+  if ($("f-loc").value.trim() && !pending) { $("f-loc").focus(); return flash("Press Find to place that address, or clear it."); }
+  const prev = editingId ? spots.find(s => s.id === editingId) : null;
+  const data = { name, area: $("f-area").value.trim(), dish: $("f-dish").value, price: $("f-price").value.trim(), visited: $("f-date").value,
+    notes: $("f-notes").value.trim(), scores: readScores(), lat: pending ? pending.lat : null, lng: pending ? pending.lng : null, createdAt: prev?.createdAt || Date.now() };
+  const id = editingId || "b" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  spots = editingId ? spots.map(s => s.id === id ? { id, ...data } : s) : [...spots, { id, ...data }];
+  persist(); const wasEdit = !!editingId; resetForm(); selectedId = id; refresh();
+  if (Number.isFinite(data.lat)) map.setView([data.lat, data.lng], Math.max(map.getZoom(), 14));
+  flash(wasEdit ? "Saved changes" : "Saved " + name);
+});
+
+/* ---------- export / import ---------- */
+$("exportBtn").onclick = () => {
+  const blob = new Blob([JSON.stringify(spots, null, 2)], { type: "application/json" });
+  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: `pho-ledger-${new Date().toISOString().slice(0, 10)}.json` });
+  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+$("importBtn").onclick = () => $("importFile").click();
+$("importFile").onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const arr = JSON.parse(await f.text());
+    if (!Array.isArray(arr)) throw 0;
+    const byId = new Map(spots.map(s => [s.id, s]));
+    arr.filter(s => s && s.id && s.name && s.scores).forEach(s => byId.set(s.id, s));
+    spots = [...byId.values()]; persist(); refresh(); fit(); flash(`Imported ${arr.length} bowls`);
+  } catch { flash("That file isn't a Pho Ledger export."); }
+  e.target.value = "";
+};
+
+refresh(); fit();
+</script>
+</body>
+</html>
