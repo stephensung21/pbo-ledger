@@ -239,7 +239,7 @@ input[type=range] { width: 100%; accent-color: var(--broth); }
       </label>
 
       <div class="foot">
-        <div class="live"><span class="big" id="liveScore">7.0</span><span><span class="tier t-good" id="liveTier">Ngon</span><br><span class="hint">overall /10</span></span></div>
+        <div class="live"><span class="big" id="liveScore">3.5</span><span><span class="tier t-good" id="liveTier">Ngon</span><br><span class="hint">overall /5</span></span></div>
         <div class="actions">
           <span class="toast" id="toast" role="status"></span>
           <button type="submit" class="primary" id="saveBtn">Save rating</button>
@@ -260,7 +260,7 @@ const CRITERIA = [
 ];
 const TOTAL_W = CRITERIA.reduce((s, c) => s + c.w, 0);
 const overall = s => CRITERIA.reduce((t, c) => t + (Number(s?.[c.key]) || 0) * c.w, 0) / TOTAL_W;
-const tierOf = v => v >= 8.5 ? ["Ngon tuyệt", "t-top", "Outstanding"] : v >= 7 ? ["Ngon", "t-good", "Good"] : v >= 5 ? ["Tạm được", "t-ok", "Passable"] : ["Thôi", "t-bad", "Skip it"];
+const tierOf = v => v >= 4.25 ? ["Ngon tuyệt", "t-top", "Outstanding"] : v >= 3.5 ? ["Ngon", "t-good", "Good"] : v >= 2.5 ? ["Tạm được", "t-ok", "Passable"] : ["Thôi", "t-bad", "Skip it"];
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
@@ -272,17 +272,19 @@ const KEY = "pho-ledger-spots";
 const load = () => { try { const v = JSON.parse(localStorage.getItem(KEY) || "null"); return Array.isArray(v) ? v : null; } catch { return null; } };
 const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(spots)); } catch {} };
 const EXAMPLES = [
-  { id: "example-1", example: true, name: "Example: Corner Pho House", area: "Cabramatta", dish: "Phở bò đặc biệt (special combo)", price: "18.50", visited: "2026-10-24", notes: "Sample entry so you can see how it works. Delete it once you've added your own.", scores: { broth: 9, noodles: 8, meat: 8.5, herbs: 8, value: 9, portion: 8.5 }, lat: -33.8946, lng: 150.9372, createdAt: 1 },
-  { id: "example-2", example: true, name: "Example: Saigon Noodle Bar", area: "Bankstown", dish: "Phở tái (rare beef)", price: "17.00", visited: "2026-11-02", notes: "Sample entry. Sweeter southern-style broth, plenty of herbs.", scores: { broth: 7, noodles: 7.5, meat: 7, herbs: 9, value: 7, portion: 7 }, lat: -33.9172, lng: 151.0349, createdAt: 2 },
-  { id: "example-3", example: true, name: "Example: Late Night Pho", area: "Marrickville", dish: "Phở gà (chicken)", price: "21.00", visited: "2026-11-09", notes: "Sample entry. Thin broth, overpriced.", scores: { broth: 4.5, noodles: 6, meat: 5, herbs: 6, value: 4, portion: 5.5 }, lat: -33.9113, lng: 151.1555, createdAt: 3 },
+  { id: "example-1", example: true, name: "Example: Corner Pho House", area: "Cabramatta", dish: "Phở bò đặc biệt (special combo)", price: "18.50", visited: "2026-10-24", notes: "Sample entry so you can see how it works. Delete it once you've added your own.", scores: { broth: 4.5, noodles: 4, meat: 4, herbs: 4, value: 4.5, portion: 4 }, scale: 5, lat: -33.8946, lng: 150.9372, createdAt: 1 },
+  { id: "example-2", example: true, name: "Example: Saigon Noodle Bar", area: "Bankstown", dish: "Phở tái (rare beef)", price: "17.00", visited: "2026-11-02", notes: "Sample entry. Sweeter southern-style broth, plenty of herbs.", scores: { broth: 3.5, noodles: 3.5, meat: 3.5, herbs: 4.5, value: 3.5, portion: 3.5 }, scale: 5, lat: -33.9172, lng: 151.0349, createdAt: 2 },
+  { id: "example-3", example: true, name: "Example: Late Night Pho", area: "Marrickville", dish: "Phở gà (chicken)", price: "21.00", visited: "2026-11-09", notes: "Sample entry. Thin broth, overpriced.", scores: { broth: 2, noodles: 3, meat: 2.5, herbs: 3, value: 2, portion: 3 }, scale: 5, lat: -33.9113, lng: 151.1555, createdAt: 3 },
 ];
-spots = load() ?? EXAMPLES.map(x => ({ ...x }));
+// Ratings saved before the switch to a 5-point scale have no `scale` field: halve them.
+const toFive = s => s.scale === 5 ? s : { ...s, scale: 5, scores: Object.fromEntries(Object.entries(s.scores || {}).map(([k, v]) => [k, Math.round(Number(v)) / 2])) };
+spots = (load() ?? EXAMPLES).map(toFive);
 
 /* ---------- criteria sliders ---------- */
 $("criteria").innerHTML = CRITERIA.map(c => `
   <div class="crit">
-    <div class="crit-top"><strong>${c.label}</strong><output id="o-${c.key}">7</output></div>
-    <input type="range" id="s-${c.key}" min="1" max="10" step="0.5" value="7" aria-label="${c.label} score">
+    <div class="crit-top"><strong>${c.label}</strong><output id="o-${c.key}">3.5</output></div>
+    <input type="range" id="s-${c.key}" min="0.5" max="5" step="0.5" value="3.5" aria-label="${c.label} score">
     <small>${c.help}</small>
     <span class="w">${c.w === 1 ? "Counts once" : c.w === 3 ? "Counts triple" : "Counts 1.5×"}</span>
   </div>`).join("");
@@ -343,7 +345,7 @@ L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
 }).addTo(map);
 const layer = L.layerGroup().addTo(map);
 let pendingMarker = null;
-const pinColor = v => v >= 8.5 ? css("--herb") : v >= 7 ? css("--broth") : v >= 5 ? css("--muted") : css("--chili");
+const pinColor = v => v >= 4.25 ? css("--herb") : v >= 3.5 ? css("--broth") : v >= 2.5 ? css("--muted") : css("--chili");
 const located = () => spots.filter(s => Number.isFinite(s.lat) && Number.isFinite(s.lng));
 function drawPins() {
   layer.clearLayers();
@@ -398,7 +400,7 @@ function renderList() {
         <span><div class="score">${shown.toFixed(1)}</div><span class="tier ${cls}" title="${en}">${t}</span></span>
       </button>
       ${sel ? `<div class="detail">
-        <div class="bars">${CRITERIA.map(c => `<div class="bar"><span>${c.label}</span><span class="track"><span class="fill" style="width:${(s.scores?.[c.key] || 0) * 10}%;display:block"></span></span><b>${s.scores?.[c.key] ?? "–"}</b></div>`).join("")}</div>
+        <div class="bars">${CRITERIA.map(c => `<div class="bar"><span>${c.label}</span><span class="track"><span class="fill" style="width:${(s.scores?.[c.key] || 0) * 20}%;display:block"></span></span><b>${s.scores?.[c.key] ?? "–"}</b></div>`).join("")}</div>
         ${s.notes ? `<p class="notes">${esc(s.notes)}</p>` : ""}
         <div class="meta">${s.price ? `<span>Paid $${esc(s.price)}</span>` : ""}${s.visited ? `<span>Visited ${esc(s.visited)}</span>` : ""}${Number.isFinite(s.lat) ? "" : "<span>No map location</span>"}</div>
         <div class="actions">
@@ -439,13 +441,13 @@ function startEdit(id) {
   $("f-dish").value = [...$("f-dish").options].some(o => o.value === s.dish) ? s.dish : "Other";
   $("f-loc").value = Number.isFinite(s.lat) ? `${s.lat}, ${s.lng}` : "";
   setPending(Number.isFinite(s.lat) ? { lat: s.lat, lng: s.lng } : null);
-  CRITERIA.forEach(c => $("s-" + c.key).value = s.scores?.[c.key] ?? 7); refreshLive();
+  CRITERIA.forEach(c => $("s-" + c.key).value = s.scores?.[c.key] ?? 3.5); refreshLive();
   $("formTitle").textContent = "Edit: " + s.name; $("saveBtn").textContent = "Save changes"; $("cancelEdit").hidden = false;
   $("formPanel").scrollIntoView({ behavior: "smooth" });
 }
 function resetForm() {
   editingId = null; $("form").reset(); $("f-date").value = new Date().toISOString().slice(0, 10);
-  CRITERIA.forEach(c => $("s-" + c.key).value = 7); refreshLive(); setPending(null);
+  CRITERIA.forEach(c => $("s-" + c.key).value = 3.5); refreshLive(); setPending(null);
   $("formTitle").textContent = "Log a bowl"; $("saveBtn").textContent = "Save rating"; $("cancelEdit").hidden = true;
 }
 $("cancelEdit").onclick = resetForm;
@@ -456,7 +458,7 @@ $("form").addEventListener("submit", e => {
   if ($("f-loc").value.trim() && !pending) { $("f-loc").focus(); return flash("Press Find to place that address, or clear it."); }
   const prev = editingId ? spots.find(s => s.id === editingId) : null;
   const data = { name, area: $("f-area").value.trim(), dish: $("f-dish").value, price: $("f-price").value.trim(), visited: $("f-date").value,
-    notes: $("f-notes").value.trim(), scores: readScores(), lat: pending ? pending.lat : null, lng: pending ? pending.lng : null, createdAt: prev?.createdAt || Date.now() };
+    notes: $("f-notes").value.trim(), scores: readScores(), scale: 5, lat: pending ? pending.lat : null, lng: pending ? pending.lng : null, createdAt: prev?.createdAt || Date.now() };
   const id = editingId || "b" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   spots = editingId ? spots.map(s => s.id === id ? { id, ...data } : s) : [...spots, { id, ...data }];
   persist(); const wasEdit = !!editingId; resetForm(); selectedId = id; refresh();
@@ -477,7 +479,7 @@ $("importFile").onchange = async e => {
     const arr = JSON.parse(await f.text());
     if (!Array.isArray(arr)) throw 0;
     const byId = new Map(spots.map(s => [s.id, s]));
-    arr.filter(s => s && s.id && s.name && s.scores).forEach(s => byId.set(s.id, s));
+    arr.filter(s => s && s.id && s.name && s.scores).map(toFive).forEach(s => byId.set(s.id, s));
     spots = [...byId.values()]; persist(); refresh(); fit(); flash(`Imported ${arr.length} bowls`);
   } catch { flash("That file isn't a Pho Ledger export."); }
   e.target.value = "";
