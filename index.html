@@ -239,7 +239,7 @@ input[type=range] { width: 100%; accent-color: var(--broth); }
       </label>
 
       <div class="foot">
-        <div class="live"><span class="big" id="liveScore">3.5</span><span><span class="tier t-good" id="liveTier">Ngon</span><br><span class="hint">overall /5</span></span></div>
+        <div class="live"><span class="big" id="liveScore">3.0</span><span><span class="tier t-ok" id="liveTier">Tạm được</span><br><span class="hint">overall /5</span></span></div>
         <div class="actions">
           <span class="toast" id="toast" role="status"></span>
           <button type="submit" class="primary" id="saveBtn">Save rating</button>
@@ -272,19 +272,23 @@ const KEY = "pho-ledger-spots";
 const load = () => { try { const v = JSON.parse(localStorage.getItem(KEY) || "null"); return Array.isArray(v) ? v : null; } catch { return null; } };
 const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(spots)); } catch {} };
 const EXAMPLES = [
-  { id: "example-1", example: true, name: "Example: Corner Pho House", area: "Cabramatta", dish: "Phở bò đặc biệt (special combo)", price: "18.50", visited: "2026-10-24", notes: "Sample entry so you can see how it works. Delete it once you've added your own.", scores: { broth: 4.5, noodles: 4, meat: 4, herbs: 4, value: 4.5, portion: 4 }, scale: 5, lat: -33.8946, lng: 150.9372, createdAt: 1 },
-  { id: "example-2", example: true, name: "Example: Saigon Noodle Bar", area: "Bankstown", dish: "Phở tái (rare beef)", price: "17.00", visited: "2026-11-02", notes: "Sample entry. Sweeter southern-style broth, plenty of herbs.", scores: { broth: 3.5, noodles: 3.5, meat: 3.5, herbs: 4.5, value: 3.5, portion: 3.5 }, scale: 5, lat: -33.9172, lng: 151.0349, createdAt: 2 },
-  { id: "example-3", example: true, name: "Example: Late Night Pho", area: "Marrickville", dish: "Phở gà (chicken)", price: "21.00", visited: "2026-11-09", notes: "Sample entry. Thin broth, overpriced.", scores: { broth: 2, noodles: 3, meat: 2.5, herbs: 3, value: 2, portion: 3 }, scale: 5, lat: -33.9113, lng: 151.1555, createdAt: 3 },
+  { id: "example-1", example: true, name: "Example: Corner Pho House", area: "Cabramatta", dish: "Phở bò đặc biệt (special combo)", price: "18.50", visited: "2026-10-24", notes: "Sample entry so you can see how it works. Delete it once you've added your own.", scores: { broth: 5, noodles: 4, meat: 4, herbs: 4, value: 5, portion: 4 }, scale: 5, lat: -33.8946, lng: 150.9372, createdAt: 1 },
+  { id: "example-2", example: true, name: "Example: Saigon Noodle Bar", area: "Bankstown", dish: "Phở tái (rare beef)", price: "17.00", visited: "2026-11-02", notes: "Sample entry. Sweeter southern-style broth, plenty of herbs.", scores: { broth: 4, noodles: 4, meat: 3, herbs: 5, value: 3, portion: 4 }, scale: 5, lat: -33.9172, lng: 151.0349, createdAt: 2 },
+  { id: "example-3", example: true, name: "Example: Late Night Pho", area: "Marrickville", dish: "Phở gà (chicken)", price: "21.00", visited: "2026-11-09", notes: "Sample entry. Thin broth, overpriced.", scores: { broth: 2, noodles: 3, meat: 2, herbs: 3, value: 2, portion: 3 }, scale: 5, lat: -33.9113, lng: 151.1555, createdAt: 3 },
 ];
-// Ratings saved before the switch to a 5-point scale have no `scale` field: halve them.
-const toFive = s => s.scale === 5 ? s : { ...s, scale: 5, scores: Object.fromEntries(Object.entries(s.scores || {}).map(([k, v]) => [k, Math.round(Number(v)) / 2])) };
+// Scores are whole numbers 1-5. Older ratings with no `scale` field were out of 10 (halve them);
+// any half-point scores from the earlier 5-point version round up.
+const toFive = s => ({ ...s, scale: 5, scores: Object.fromEntries(Object.entries(s.scores || {}).map(([k, v]) => {
+  const n = s.scale === 5 ? Number(v) : Number(v) / 2;
+  return [k, Math.min(5, Math.max(1, Math.round(n || 1)))];
+})) });
 spots = (load() ?? EXAMPLES).map(toFive);
 
 /* ---------- criteria sliders ---------- */
 $("criteria").innerHTML = CRITERIA.map(c => `
   <div class="crit">
-    <div class="crit-top"><strong>${c.label}</strong><output id="o-${c.key}">3.5</output></div>
-    <input type="range" id="s-${c.key}" min="0.5" max="5" step="0.5" value="3.5" aria-label="${c.label} score">
+    <div class="crit-top"><strong>${c.label}</strong><output id="o-${c.key}">3</output></div>
+    <input type="range" id="s-${c.key}" min="1" max="5" step="1" value="3" aria-label="${c.label} score">
     <small>${c.help}</small>
     <span class="w">${c.w === 1 ? "Counts once" : c.w === 3 ? "Counts triple" : "Counts 1.5×"}</span>
   </div>`).join("");
@@ -441,13 +445,13 @@ function startEdit(id) {
   $("f-dish").value = [...$("f-dish").options].some(o => o.value === s.dish) ? s.dish : "Other";
   $("f-loc").value = Number.isFinite(s.lat) ? `${s.lat}, ${s.lng}` : "";
   setPending(Number.isFinite(s.lat) ? { lat: s.lat, lng: s.lng } : null);
-  CRITERIA.forEach(c => $("s-" + c.key).value = s.scores?.[c.key] ?? 3.5); refreshLive();
+  CRITERIA.forEach(c => $("s-" + c.key).value = s.scores?.[c.key] ?? 3); refreshLive();
   $("formTitle").textContent = "Edit: " + s.name; $("saveBtn").textContent = "Save changes"; $("cancelEdit").hidden = false;
   $("formPanel").scrollIntoView({ behavior: "smooth" });
 }
 function resetForm() {
   editingId = null; $("form").reset(); $("f-date").value = new Date().toISOString().slice(0, 10);
-  CRITERIA.forEach(c => $("s-" + c.key).value = 3.5); refreshLive(); setPending(null);
+  CRITERIA.forEach(c => $("s-" + c.key).value = 3); refreshLive(); setPending(null);
   $("formTitle").textContent = "Log a bowl"; $("saveBtn").textContent = "Save rating"; $("cancelEdit").hidden = true;
 }
 $("cancelEdit").onclick = resetForm;
